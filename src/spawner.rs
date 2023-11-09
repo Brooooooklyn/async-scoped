@@ -53,6 +53,8 @@ pub mod use_async_std {
 #[cfg(feature = "use-tokio")]
 pub mod use_tokio {
     use super::*;
+    #[cfg(target_os = "wasi")]
+    use tokio::runtime::Handle;
     use tokio::task as tokio_task;
 
     #[derive(Default)]
@@ -72,18 +74,32 @@ pub mod use_tokio {
         type SpawnHandle = tokio_task::JoinHandle<T>;
 
         fn spawn_func<F: FnOnce() -> T + Send + 'static>(&self, f: F) -> Self::SpawnHandle {
-            tokio_task::spawn_blocking(f)
+            #[cfg(not(target_os = "wasi"))]
+            {
+                tokio_task::spawn_blocking(f)
+            }
+            #[cfg(target_os = "wasi")]
+            {
+                Handle::current().spawn_blocking(f)
+            }
         }
     }
 
     unsafe impl Blocker for Tokio {
         fn block_on<T, F: Future<Output = T>>(&self, f: F) -> T {
-            tokio_task::block_in_place(|| {
-                tokio::runtime::Builder::new_current_thread()
-                    .build()
-                    .unwrap()
-                    .block_on(f)
-            })
+            #[cfg(not(target_os = "wasi"))]
+            {
+                tokio_task::block_in_place(|| {
+                    tokio::runtime::Builder::new_current_thread()
+                        .build()
+                        .unwrap()
+                        .block_on(f)
+                })
+            }
+            #[cfg(target_os = "wasi")]
+            {
+                Handle::current().block_on(f)
+            }
         }
     }
 }
